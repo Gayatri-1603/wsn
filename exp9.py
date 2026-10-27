@@ -1,0 +1,157 @@
+
+import matplotlib.pyplot as plt
+import networkx as nx
+import numpy as np
+import random
+from matplotlib.animation import FuncAnimation
+
+# Configuration
+N = 8
+comm_radius = 0.4
+source_id, dest_id = random.sample(range(N), 2)
+
+# Create Random Graph
+positions = {i: (random.random(), random.random()) for i in range(N)}
+G = nx.Graph()
+
+for i in range(N):
+    for j in range(i + 1, N):
+        d = np.linalg.norm(
+            np.array(positions[i]) - np.array(positions[j])
+        )
+        if d < comm_radius:
+            G.add_edge(i, j)
+
+# Route Discovery (BFS)
+parent = {source_id: None}
+queue = [source_id]
+found = False
+
+while queue and not found:
+    node = queue.pop(0)
+    for neigh in G.neighbors(node):
+        if neigh not in parent:
+            parent[neigh] = node
+            queue.append(neigh)
+            if neigh == dest_id:
+                found = True
+                break
+
+# Reconstruct Path
+path = []
+
+if dest_id in parent:
+    node = dest_id
+    while node is not None:
+        path.append(node)
+        node = parent[node]
+    path.reverse()
+
+print(f"Source: {source_id}, Destination: {dest_id}")
+print(f"Discovered route: {path}" if path else "No route found!")
+
+# Visualization
+fig, ax = plt.subplots(figsize=(7, 6))
+
+nx.draw_networkx_edges(G, positions, alpha=0.3, ax=ax)
+nx.draw_networkx_nodes(
+    G, positions, node_color="skyblue", node_size=600, ax=ax
+)
+nx.draw_networkx_labels(
+    G, positions, font_size=10, font_weight="bold", ax=ax
+)
+nx.draw_networkx_nodes(
+    G, positions, nodelist=[source_id],
+    node_color="green", node_size=700, ax=ax
+)
+nx.draw_networkx_nodes(
+    G, positions, nodelist=[dest_id],
+    node_color="red", node_size=700, ax=ax
+)
+
+plt.title(
+    f"Ad-hoc Network Simulation\n"
+    f"Source: {source_id} → Destination: {dest_id}",
+    fontsize=14
+)
+plt.axis("off")
+
+# Packet Animation
+if path and len(path) > 1:
+    path_edges = [
+        (path[i], path[i + 1])
+        for i in range(len(path) - 1)
+    ]
+
+    packet, = ax.plot(
+        [], [], 'o', color='red', markersize=12
+    )
+
+    phases = ["RREQ", "RREP", "DATA"]
+    phase_colors = {
+        "RREQ": "red",
+        "RREP": "green",
+        "DATA": "blue"
+    }
+
+    legend_patches = [
+        plt.Line2D(
+            [0], [0], marker='o', color='w',
+            label=phase, markerfacecolor=color,
+            markersize=10
+        )
+        for phase, color in phase_colors.items()
+    ]
+
+    ax.legend(handles=legend_patches, loc='upper right')
+
+    def interpolate(p1, p2, t):
+        return (
+            p1[0] * (1 - t) + p2[0] * t,
+            p1[1] * (1 - t) + p2[1] * t
+        )
+
+    printed_edges = set()
+
+    def animate(frame):
+        frames_per_edge = 30
+        total_frames_per_phase = frames_per_edge * len(path_edges)
+
+        phase_index = frame // total_frames_per_phase
+
+        if phase_index >= len(phases):
+            return packet,
+
+        phase = phases[phase_index]
+        packet.set_color(phase_colors[phase])
+
+        phase_frame = frame % total_frames_per_phase
+        edge_index = phase_frame // frames_per_edge
+        t = (phase_frame % frames_per_edge) / frames_per_edge
+
+        if phase == "RREQ":
+            u, v = path_edges[edge_index]
+        elif phase == "RREP":
+            u, v = path_edges[::-1][edge_index]
+        else:
+            u, v = path_edges[edge_index]
+
+        if (phase, u, v) not in printed_edges and t < 0.01:
+            print(
+                f"{phase} packet forwarded "
+                f"from Node {u} to Node {v}"
+            )
+            printed_edges.add((phase, u, v))
+
+        p1, p2 = positions[u], positions[v]
+        x, y = interpolate(p1, p2, t)
+        packet.set_data([x], [y])
+
+        return packet,
+
+    ani = FuncAnimation(
+        fig, animate, frames=300,
+        interval=100, blit=False, repeat=False
+    )
+
+plt.show()
